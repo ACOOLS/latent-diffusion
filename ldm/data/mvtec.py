@@ -45,7 +45,7 @@ class MVTecSR(Dataset):
                  degradation=None, downscale_f=4, min_crop_f=0.5, max_crop_f=1.,
                  random_crop=True):
         self.data_root = data_root
-        #self.transform = transform
+        self.transform = None
         self.random_crops = 5
         self.taille_crop = size // 16
         self.num_crop = 16 * 16 
