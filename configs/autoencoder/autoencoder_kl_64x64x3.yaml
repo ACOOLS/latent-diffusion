@@ -51,4 +51,6 @@ lightning:
 
   trainer:
     benchmark: True
-    accumulate_grad_batches: 2
+    accelerator: DDP
+    gpus: 1 
+

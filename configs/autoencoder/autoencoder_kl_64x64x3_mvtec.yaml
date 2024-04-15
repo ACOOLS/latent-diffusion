@@ -27,22 +27,22 @@ model:
 data:
   target: main.DataModuleFromConfig
   params:
-    batch_size: 1
+    batch_size: 2
     wrap: True
     train:
       target: ldm.data.mvtec.MVTecSRTrain
       params:
-        size: 512
+        size: 1024
         degradation: pil_nearest
-        subset_size: 25
-        data_root: /home/aurelie/datasets/mvtec_anomaly/screw/train/good
+        subset_size: 1
+        data_root: /root/VQGanomaly-ResNet-CareNet-Vit/screw/train/good
     validation:
       target: ldm.data.mvtec.MVTecSRValidation
       params:
-        size: 512
+        size: 1024
         degradation: pil_nearest
-        subset_size: 15
-        data_root: /home/aurelie/datasets/mvtec_anomaly/screw/val
+        subset_size: 1
+        data_root: /root/VQGanomaly-ResNet-CareNet-Vit/screw/val
         
 
 lightning:
@@ -51,9 +51,11 @@ lightning:
       target: main.ImageLogger
       params:
         batch_frequency: 100
-        max_images: 81
+        max_images: 256
         increase_log_steps: True
 
   trainer:
     benchmark: True
     accumulate_grad_batches: 2
+    precision: 16
+    

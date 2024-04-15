@@ -45,7 +45,7 @@ class MVTecSR(Dataset):
                  degradation=None, downscale_f=4, min_crop_f=0.5, max_crop_f=1.,
                  random_crop=True):
         self.data_root = data_root
-        self.transform = None
+        #self.transform = None
         self.random_crops = 5
         self.taille_crop = size // 16
         self.num_crop = 16 * 16 
@@ -61,7 +61,7 @@ class MVTecSR(Dataset):
         assert(max_crop_f <= 1.)
         self.center_crop = not random_crop
 
-        self.image_rescaler = albumentations.SmallestMaxSize(max_size=size//8, interpolation=cv2.INTER_AREA)
+        self.image_rescaler = albumentations.SmallestMaxSize(max_size=size//16, interpolation=cv2.INTER_AREA)
 
         self.pil_interpolation = False # gets reset later if incase interp_op is from pillow
 
@@ -99,7 +99,7 @@ class MVTecSR(Dataset):
         return len(self.image_paths)
 
     @staticmethod
-    def get_random_crops(image, num_crops=1, crop_size=(256, 256), crop_range=(192, 832)):
+    def get_random_crops(image, num_crops=5, crop_size=(256, 256), crop_range=(192, 832)):
         crops = []
         min_x, max_x = crop_range  # Plage pour la largeur
         min_y, max_y = crop_range  # Plage pour la hauteur
@@ -123,13 +123,13 @@ class MVTecSR(Dataset):
         crops = []
         # Taille des crops
         taille_crop = 64
-        nb_crops = 5
+        nb_crops = 16
 
         max_x_debut = image.width - taille_crop * nb_crops
         max_y_debut = image.height - taille_crop * nb_crops
 
-        x_debut = random.randint(64, max_x_debut)
-        y_debut = random.randint(64, max_y_debut)
+        x_debut = random.randint(0, max_x_debut)
+        y_debut = random.randint(0, max_y_debut)
 
         crops = []
 
@@ -158,34 +158,38 @@ class MVTecSR(Dataset):
         
         # Utiliser get_random_crops pour extraire des crops aléatoires
         #crops = self.get_random_crops(image, num_crops=100, crop_size=(64, 64), crop_range=(128, 896))
-        #crops = self.fixed_crops(image)
-        
-        to_tensor = transforms.Compose([
-        transforms.Grayscale(num_output_channels=3),
-        transforms.ToTensor()
-        ])
-
-        # Extraction de crops fixes
         crops = [image.crop((i % 16 * self.taille_crop, i // 16 * self.taille_crop, 
                              (i % 16 + 1) * self.taille_crop, (i // 16 + 1) * self.taille_crop))
                  for i in range(self.num_crop)]
+        random_crop = self.get_random_crops(image, num_crops=5, crop_size=(64, 64), crop_range=(0, 1024))
+        for random_c in random_crop: 
+            crops.append(random_c)
+            
+        #crops.append(random_crop)
+        to_tensor = transforms.Compose([
+            transforms.Grayscale(num_output_channels=3),
+            transforms.ToTensor()
+            ])
+
+        # Extraction de crops fixes
+        #
         
         # Ajout des crops aléatoires
-        for _ in range(self.random_crops):
-            x = random.randint(0, image.width - self.taille_crop)
-            y = random.randint(0, image.height - self.taille_crop)
-            random_crop = image.crop((x, y, x + self.taille_crop, y + self.taille_crop))
-            crops.append(random_crop)
+        #for _ in range(self.random_crops):
+        #    x = random.randint(0, image.width - self.taille_crop)
+        #    y = random.randint(0, image.height - self.taille_crop)
+        #    random_crop = image.crop((x, y, x + self.taille_crop, y + self.taille_crop))
+        #    crops.append(random_crop)
 
         # Transformation des crops
-        if self.transform:
-            crops = [self.transform(crop) for crop in crops]
-        else:
-            to_tensor = transforms.Compose([
-                transforms.Grayscale(num_output_channels=3),
-                transforms.ToTensor()
-            ])
-            crops = [to_tensor(crop) for crop in crops]
+        #@if self.transform:
+        #    crops = [self.transform(crop) for crop in crops]
+        #else:
+        #    to_tensor = transforms.Compose([
+        #        transforms.Grayscale(num_output_channels=3),
+        #        transforms.ToTensor()
+        #    ])
+        #crops = [ for crop in crops]
 
         # image = np.array(image).astype(np.uint8)
     
@@ -239,31 +243,16 @@ class MVTecSR(Dataset):
 
         # Traiter chaque crop
         for crop in crops:
-            crop = np.array(crop).astype(np.uint8)
-            min_side_len = min(crop.shape[:2])
-         
-            crop_side_len = min_side_len #* np.random.uniform(self.min_crop_f, self.max_crop_f, size=None)
-            crop_side_len = int(crop_side_len)
-
-            # Appliquer des opérations de crop supplémentaires si nécessaire
-            if self.center_crop:
-                cropper = albumentations.CenterCrop(height=crop_side_len, width=crop_side_len)
-            else:
-                cropper = albumentations.RandomCrop(height=crop_side_len, width=crop_side_len)
-            
-            cropped_image = cropper(image=crop)["image"]
-            resized_image = self.image_rescaler(image=cropped_image)["image"]
-
-            # Traiter pour obtenir l'image LR
+      
             if self.pil_interpolation:
-                image_pil = PIL.Image.fromarray(resized_image)
-                LR_image_pil = self.degradation_process(image_pil)
+                #image_pil = PIL.Image.fromarray(resized_image)
+                LR_image_pil = self.degradation_process(crop)
                 LR_image = np.array(LR_image_pil).astype(np.uint8)
             else:
-                LR_image = self.degradation_process(image=resized_image)["image"]
+                LR_image = self.degradation_process(image=crop)["image"]
 
             # Convertir en tenseurs et ajouter aux listes
-            images_np.append(to_tensor(PIL.Image.fromarray(resized_image)))
+            images_np.append(to_tensor(crop))#PIL.Image.fromarray(crop)))
             LR_images_np.append(to_tensor(PIL.Image.fromarray(LR_image)))
 
         # Empiler les images de tous les crops pour créer un batch
@@ -272,8 +261,7 @@ class MVTecSR(Dataset):
 
         # Les images sont maintenant des tenseurs de la forme [num_crops, 1, H, W]
         return {"image": images_tensor, "LR_image": LR_images_tensor}
-       
-
+    
 class MVTecSRTrain(MVTecSR):
     def __init__(self, data_root, subset_size=None, **kwargs):
         super().__init__(data_root, **kwargs)

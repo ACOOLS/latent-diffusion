@@ -324,12 +324,15 @@ class DDPM(pl.LightningModule):
         # b, c, h, w, device, img_size, = *x.shape, x.device, self.image_size
         # assert h == img_size and w == img_size, f'height and width of image must be {img_size}'
         t = torch.randint(0, self.num_timesteps, (x.shape[0],), device=self.device).long()
+        print("\n\n\n tttttttttttttttttttttttt \ı\n\n", t)
         return self.p_losses(x, t, *args, **kwargs)
 
     def get_input(self, batch, k):
 
         x = batch[k]
-        x = x.squeeze(0)
+        x = x.reshape(-1, x.shape[2], x.shape[3], x.shape[4])
+        print("x shape", x.shape)
+        #x = x.squeeze(0)
         if len(x.shape) == 3:
             x = x[..., None]
         #x = rearrange(x, 'b h w c -> b c h w')
@@ -377,7 +380,7 @@ class DDPM(pl.LightningModule):
         return denoise_grid
 
     @torch.no_grad()
-    def log_images(self, batch, N=100, n_row=2, sample=True, return_keys=None, **kwargs):
+    def log_images(self, batch, N=500, n_row=2, sample=True, return_keys=None, **kwargs):
         log = dict()
         x = self.get_input(batch, self.first_stage_key)
         N = min(x.shape[0], N)
@@ -1028,6 +1031,9 @@ class LatentDiffusion(DDPM):
 
         loss_simple = self.get_loss(model_output, target, mean=False).mean([1, 2, 3])
         loss_dict.update({f'{prefix}/loss_simple': loss_simple.mean()})
+        self.logvar = self.logvar.to(self.device)
+        #print("Device of logvar:", self.logvar.device)
+        #print("Device of t:", t.device)
 
         logvar_t = self.logvar[t].to(self.device)
         loss = loss_simple / torch.exp(logvar_t) + logvar_t
@@ -1216,7 +1222,7 @@ class LatentDiffusion(DDPM):
         return img
 
     @torch.no_grad()
-    def sample(self, cond, batch_size=8, return_intermediates=False, x_T=None,
+    def sample(self, cond, batch_size=256, return_intermediates=False, x_T=None,
                verbose=True, timesteps=None, quantize_denoised=False,
                mask=None, x0=None, shape=None,**kwargs):
         if shape is None:
@@ -1250,22 +1256,33 @@ class LatentDiffusion(DDPM):
 
 
     @torch.no_grad()
-    def log_images(self, batch, N=8, n_row=4, sample=True, ddim_steps=100, ddim_eta=1., return_keys=None,
+    def log_images(self, batch, N=256, n_row=16, sample=True, ddim_steps=500, ddim_eta=1., return_keys=None,
                    quantize_denoised=True, inpaint=False, plot_denoise_rows=False, plot_progressive_rows=True,
                    plot_diffusion_rows=True, **kwargs):
 
         use_ddim = ddim_steps is not None
 
         log = dict()
+    
+
         z, c, x, xrec, xc = self.get_input(batch, self.first_stage_key,
                                            return_first_stage_outputs=True,
                                            force_c_encode=True,
                                            return_original_cond=True,
                                            bs=N)
+        
+    
+
         N = min(x.shape[0], N)
-        n_row = min(x.shape[0], n_row)
+        n_row = 8 #min(x.shape[0], n_row)
         log["inputs"] = x
         log["reconstruction"] = xrec
+        N_modif = 8
+        indices = torch.randperm(x.size(0))[:N_modif]
+        z = z[indices]
+        x = x[indices]
+        xrec = xrec[indices]
+
         if self.model.conditioning_key is not None:
             if hasattr(self.cond_stage_model, "decode"):
                 xc = self.cond_stage_model.decode(c)
@@ -1282,7 +1299,7 @@ class LatentDiffusion(DDPM):
                 log["original_conditioning"] = self.to_rgb(xc)
 
         if plot_diffusion_rows:
-            # get diffusion row
+            # get diffusion row 
             diffusion_row = list()
             z_start = z[:n_row]
             for t in range(self.num_timesteps):
@@ -1302,7 +1319,8 @@ class LatentDiffusion(DDPM):
         if sample:
             # get denoise row
             with self.ema_scope("Plotting"):
-                samples, z_denoise_row = self.sample_log(cond=c,batch_size=N,ddim=use_ddim,
+                
+                samples, z_denoise_row = self.sample_log(cond=c,batch_size=N_modif,ddim=use_ddim,
                                                          ddim_steps=ddim_steps,eta=ddim_eta)
                 # samples, z_denoise_row = self.sample(cond=c, batch_size=N, return_intermediates=True)
             x_samples = self.decode_first_stage(samples)
@@ -1315,7 +1333,7 @@ class LatentDiffusion(DDPM):
                     self.first_stage_model, IdentityFirstStage):
                 # also display when quantizing x0 while sampling
                 with self.ema_scope("Plotting Quantized Denoised"):
-                    samples, z_denoise_row = self.sample_log(cond=c,batch_size=N,ddim=use_ddim,
+                    samples, z_denoise_row = self.sample_log(cond=c,batch_size=N_modif,ddim=use_ddim,
                                                              ddim_steps=ddim_steps,eta=ddim_eta,
                                                              quantize_denoised=True)
                     # samples, z_denoise_row = self.sample(cond=c, batch_size=N, return_intermediates=True,
@@ -1332,7 +1350,7 @@ class LatentDiffusion(DDPM):
                 mask = mask[:, None, ...]
                 with self.ema_scope("Plotting Inpaint"):
 
-                    samples, _ = self.sample_log(cond=c,batch_size=N,ddim=use_ddim, eta=ddim_eta,
+                    samples, _ = self.sample_log(cond=c,batch_size=N_modif,ddim=use_ddim, eta=ddim_eta,
                                                 ddim_steps=ddim_steps, x0=z[:N], mask=mask)
                 x_samples = self.decode_first_stage(samples.to(self.device))
                 log["samples_inpainting"] = x_samples
@@ -1340,8 +1358,8 @@ class LatentDiffusion(DDPM):
 
                 # outpaint
                 with self.ema_scope("Plotting Outpaint"):
-                    samples, _ = self.sample_log(cond=c, batch_size=N, ddim=use_ddim,eta=ddim_eta,
-                                                ddim_steps=ddim_steps, x0=z[:N], mask=mask)
+                    samples, _ = self.sample_log(cond=c, batch_size=N_modif, ddim=use_ddim,eta=ddim_eta,
+                                                ddim_steps=ddim_steps, x0=z[:N_modif], mask=mask)
                 x_samples = self.decode_first_stage(samples.to(self.device))
                 log["samples_outpainting"] = x_samples
 
@@ -1349,7 +1367,7 @@ class LatentDiffusion(DDPM):
             with self.ema_scope("Plotting Progressives"):
                 img, progressives = self.progressive_denoising(c,
                                                                shape=(self.channels, self.image_size, self.image_size),
-                                                               batch_size=N)
+                                                               batch_size=N_modif)
             prog_row = self._get_denoise_row_from_list(progressives, desc="Progressive Generation")
             log["progressive_row"] = prog_row
 
